@@ -69,6 +69,26 @@ run_failure_mode() {
   assert_error "$category"
 }
 
+run_protocol_failure_mode() {
+  protocol_mode=$1
+  seed_cache
+  set +e
+  FAKE_CODEX_MODE=$protocol_mode \
+  FAKE_CODEX_FIXTURE_DIR=$ROOT/fixtures \
+  CODEX_USAGE_CACHE_DIR=$TMPDIR_TEST/cache \
+  CODEX_USAGE_CODEX_BIN=$TMPDIR_TEST/bin/codex \
+  CODEX_USAGE_NOW=1785686800 \
+  CODEX_USAGE_FORCE=1 \
+  CODEX_USAGE_TIMEOUT_SECONDS=2 \
+  timeout 4 sh "$ROOT/fetch-usage.sh" >/dev/null 2>&1
+  exit_status=$?
+  set -e
+  [ "$exit_status" -ne 124 ] || fail "$protocol_mode stalled waiting for Codex"
+  [ "$exit_status" -ne 0 ] || fail "$protocol_mode unexpectedly succeeded"
+  assert_cache_preserved
+  assert_error refresh_failed
+}
+
 run_mode success 1785686400
 assert_jq '.version == 1 and .captured_at == 1785686400'
 assert_jq '.primary == {"used_percentage":25,"window_minutes":300,"resets_at":1785690000}'
@@ -97,6 +117,15 @@ run_failure_mode api-key api_key_unsupported
 run_failure_mode non-codex-only rate_limits_unavailable
 run_failure_mode method-not-found codex_version_unsupported
 run_failure_mode malformed refresh_failed
+run_failure_mode initialize-rpc-error refresh_failed
+run_failure_mode account-method-not-found codex_version_unsupported
+run_failure_mode account-rpc-error refresh_failed
+run_failure_mode rate-limits-method-not-found codex_version_unsupported
+run_failure_mode rate-limits-rpc-error refresh_failed
+
+run_protocol_failure_mode exit-before-read
+run_protocol_failure_mode incomplete
+run_protocol_failure_mode malformed-syntax
 
 run_mode no-secondary 1785686600
 
@@ -105,22 +134,6 @@ CODEX_USAGE_CODEX_BIN=/definitely/missing \
 CODEX_USAGE_NOW=1785686700 \
 sh "$ROOT/fetch-usage.sh" || fail "fresh cache did not no-op"
 assert_jq '.captured_at == 1785686600'
-
-rm -f "$TMPDIR_TEST/cache/usage.json" "$REQUEST_LOG"
-set +e
-FAKE_CODEX_MODE=exit-before-read \
-FAKE_CODEX_FIXTURE_DIR=$ROOT/fixtures \
-CODEX_USAGE_CACHE_DIR=$TMPDIR_TEST/cache \
-CODEX_USAGE_CODEX_BIN=$TMPDIR_TEST/bin/codex \
-CODEX_USAGE_NOW=1785686800 \
-CODEX_USAGE_FORCE=1 \
-CODEX_USAGE_TIMEOUT_SECONDS=1 \
-CODEX_USAGE_TEST_PRE_REQUEST_DELAY_SECONDS=1 \
-timeout 4 sh "$ROOT/fetch-usage.sh" >/dev/null 2>&1
-exit_status=$?
-set -e
-[ "$exit_status" -ne 124 ] || fail "early app-server exit stalled FIFO delivery"
-[ "$exit_status" -ne 0 ] || fail "early app-server exit unexpectedly succeeded"
 
 rm -f "$TMPDIR_TEST/cache/usage.json" "$REQUEST_LOG"
 set +e

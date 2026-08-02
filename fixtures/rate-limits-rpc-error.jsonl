@@ -1,0 +1,3 @@
+{"jsonrpc":"2.0","id":1,"result":{}}
+{"jsonrpc":"2.0","id":2,"result":{"account":{"type":"chatgpt"}}}
+{"jsonrpc":"2.0","id":3,"error":{"code":-32000,"message":"rate limits unavailable"}}

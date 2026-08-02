@@ -5,6 +5,7 @@ PLUGIN_VERSION=0.1.0
 SCHEMA_VERSION=1
 REFRESH_SECONDS=300
 TIMEOUT_SECONDS=${CODEX_USAGE_TIMEOUT_SECONDS:-30}
+ERROR_DETAIL_MAX=120
 CACHE_DIR=${CODEX_USAGE_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/DankCodexUsage}
 CACHE_FILE=$CACHE_DIR/usage.json
 ERROR_FILE=$CACHE_DIR/error.json
@@ -38,6 +39,7 @@ trap cleanup EXIT HUP INT TERM
 write_error() {
   category=$1
   detail=$2
+  detail=$(printf '%.*s' "$ERROR_DETAIL_MAX" "$detail")
   error_temp=$(mktemp "$CACHE_DIR/error.json.XXXXXX" 2>/dev/null || printf '%s/error.json.tmp.%s' "$CACHE_DIR" "$$") || return 1
   if command -v jq >/dev/null 2>&1; then
     jq -n --arg category "$category" --argjson occurred_at "$NOW" --arg detail "$detail" \
@@ -93,11 +95,12 @@ OUTPUT_FIFO=$WORK_DIR/output
 RESPONSES=$WORK_DIR/responses.jsonl
 BUCKET=$WORK_DIR/bucket.json
 TIMEOUT_MARKER=$WORK_DIR/timed-out
+READER_DONE=$WORK_DIR/reader-done
 mkfifo "$INPUT_FIFO" "$OUTPUT_FIFO" || fail refresh_failed 'cannot create app-server pipes'
 
 # Keep a read/write endpoint open long enough for the server to attach to stdin.
 exec 7<>"$INPUT_FIFO"
-cat "$OUTPUT_FIFO" >"$RESPONSES" &
+(cat "$OUTPUT_FIFO" >"$RESPONSES"; : >"$READER_DONE") &
 READER_PID=$!
 setsid "$CODEX_BIN" app-server <&7 >"$OUTPUT_FIFO" &
 APP_PID=$!
@@ -121,6 +124,7 @@ while ! jq -s -e '
   ([.[] | select(.id == 1 or .id == 2 or .id == 3) | .id] | unique | length == 3)
 ' "$RESPONSES" >/dev/null 2>&1; do
   [ -f "$TIMEOUT_MARKER" ] && fail timeout 'Codex refresh timed out'
+  [ -f "$READER_DONE" ] && fail refresh_failed 'Codex app-server ended before a complete response'
   [ "$elapsed" -ge "$TIMEOUT_SECONDS" ] && fail refresh_failed 'Codex app-server did not complete'
   sleep 1
   elapsed=$((elapsed + 1))
@@ -130,20 +134,20 @@ kill -TERM "-$WATCHDOG_PID" 2>/dev/null || true
 wait "$WATCHDOG_PID" 2>/dev/null || true
 WATCHDOG_PID=
 
-initialize_status=$(jq -s -r '
+rpc_status=$(jq -s -r '
   def response($id): map(select(.id == $id)) | last;
-  response(1) as $response |
-  if ($response | type) != "object" then "failed"
-  elif $response.error? != null then
-    if $response.error.code == -32601 or (($response.error.message? // "") | test("method not found"; "i"))
+  [response(1), response(2), response(3)] as $responses |
+  if any($responses[]; (type != "object") or ((.result? == null) and (.error? == null))) then "failed"
+  elif any($responses[]; .error? != null) then
+    if any($responses[]; .error? != null and
+      (.error.code == -32601 or ((.error.message? // "") | test("method not found"; "i"))))
     then "unsupported" else "failed" end
-  elif $response.result? == null then "failed"
   else "ok" end
 ' "$RESPONSES") || fail refresh_failed 'invalid initialize response'
-case $initialize_status in
+case $rpc_status in
   ok) ;;
   unsupported) fail codex_version_unsupported 'installed Codex does not support usage refresh' ;;
-  *) fail refresh_failed 'Codex initialize request failed' ;;
+  *) fail refresh_failed 'Codex RPC request failed' ;;
 esac
 
 auth_mode=$(jq -s -r '

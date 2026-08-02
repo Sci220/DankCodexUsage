@@ -1,0 +1,3 @@
+{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"temporary server error"}}
+{"jsonrpc":"2.0","id":2,"result":{"account":{"type":"chatgpt"}}}
+{"jsonrpc":"2.0","id":3,"result":{"rateLimits":{"limitId":"codex","primary":{"usedPercent":25,"windowDurationMins":300,"resetsAt":1785690000},"secondary":null}}}
