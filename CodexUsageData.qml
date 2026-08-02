@@ -25,6 +25,7 @@ Singleton {
     readonly property string cachePath: cacheDir + "/usage.json"
     readonly property string errorPath: cacheDir + "/error.json"
     property var refreshedResetEpochs: ({})
+    property bool initialUsageResolved: false
 
     function isInteger(value) {
         return typeof value === "number" && isFinite(value) && Math.floor(value) === value
@@ -64,7 +65,8 @@ Singleton {
             root.capturedAt = value.captured_at
             root.primary = value.primary === null ? null : normalizedWindow(value.primary)
             root.secondary = value.secondary === null ? null : normalizedWindow(value.secondary)
-            checkWindowResets()
+            if (initialUsageResolved)
+                checkWindowResets()
         } catch (error) {
             console.warn("codexUsage: bad usage cache:", error)
         }
@@ -119,7 +121,9 @@ Singleton {
     function refresh(force) {
         if (refreshing)
             return
-        if (!force && capturedAt > 0 && now - capturedAt < refreshSeconds)
+        const wallClock = Math.floor(Date.now() / 1000)
+        if (!force && capturedAt > 0 && capturedAt <= wallClock
+                && wallClock - capturedAt < refreshSeconds)
             return
 
         refreshing = true
@@ -127,7 +131,15 @@ Singleton {
             root.refreshing = false
             cacheFile.reload()
             errorFile.reload()
-        }, 35)
+        }, 35, 35000)
+    }
+
+    function finishInitialUsageLoad() {
+        if (initialUsageResolved)
+            return
+        initialUsageResolved = true
+        refresh(false)
+        checkWindowResets()
     }
 
     function checkWindowReset(propertyName) {
@@ -153,7 +165,6 @@ Singleton {
     Component.onCompleted: {
         cacheFile.reload()
         errorFile.reload()
-        refresh(false)
     }
 
     Timer {
@@ -176,19 +187,29 @@ Singleton {
     FileView {
         id: cacheFile
         path: root.cachePath
+        preload: false
         watchChanges: true
-        onLoaded: root.loadUsage(cacheFile.text())
+        onLoaded: {
+            root.loadUsage(cacheFile.text())
+            root.finishInitialUsageLoad()
+        }
+        onLoadFailed: function(error) {
+            root.finishInitialUsageLoad()
+        }
         onFileChanged: reload()
     }
 
     FileView {
         id: errorFile
         path: root.errorPath
+        preload: false
         watchChanges: true
         onLoaded: root.loadError(errorFile.text())
-        onLoadFailed: {
-            root.errorCategory = ""
-            root.errorDetail = ""
+        onLoadFailed: function(error) {
+            if (error === FileViewError.FileNotFound) {
+                root.errorCategory = ""
+                root.errorDetail = ""
+            }
         }
         onFileChanged: reload()
     }
