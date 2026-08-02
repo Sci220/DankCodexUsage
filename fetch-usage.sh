@@ -87,19 +87,20 @@ READER_PID=$!
 setsid "$CODEX_BIN" app-server <&7 >"$OUTPUT_FIFO" &
 SERVER_PID=$!
 SERVER_PGID=$SERVER_PID
-exec 7>&-
 
 setsid sh -c 'sleep "$1"; kill -TERM "-$2" 2>/dev/null || true' sh \
   "$TIMEOUT_SECONDS" "$SERVER_PGID" &
 WATCHDOG_PID=$!
 
-exec 8>"$INPUT_FIFO"
+if [ -n "${CODEX_USAGE_TEST_PRE_REQUEST_DELAY_SECONDS:-}" ]; then
+  sleep "$CODEX_USAGE_TEST_PRE_REQUEST_DELAY_SECONDS"
+fi
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"DankCodexUsage","version":"0.1.0"}}}' \
   '{"jsonrpc":"2.0","method":"initialized","params":{}}' \
   '{"jsonrpc":"2.0","id":2,"method":"account/read","params":{}}' \
-  '{"jsonrpc":"2.0","id":3,"method":"account/rateLimits/read","params":{}}' >&8
-exec 8>&-
+  '{"jsonrpc":"2.0","id":3,"method":"account/rateLimits/read","params":{}}' >&7
+exec 7>&-
 
 elapsed=0
 while ! jq -s -e '
@@ -152,12 +153,25 @@ jq -e --argjson now "$NOW" '
   }
   | select(.primary != null or .secondary != null)
 ' "$BUCKET" >"$CACHE_TEMP" || fail 'Codex response has no valid rate-limit window'
+if [ "${CODEX_USAGE_TEST_MUTATE_CACHE:-}" = invalid-primary ]; then
+  jq '.primary.used_percentage = "invalid"' "$CACHE_TEMP" >"$CACHE_TEMP.mutated" || \
+    fail 'cannot mutate cache for validation test'
+  mv "$CACHE_TEMP.mutated" "$CACHE_TEMP" || fail 'cannot mutate cache for validation test'
+fi
 chmod 600 "$CACHE_TEMP" || fail 'cannot secure cache file'
 jq -e '
+  def valid_window:
+    type == "object" and
+    (.used_percentage | type == "number" and . >= 0 and . <= 100 and floor == .) and
+    (.window_minutes | type == "number" and . > 0 and floor == .) and
+    (.resets_at | type == "number" and . > 0 and floor == .);
+  def valid_or_null: . == null or valid_window;
+  type == "object" and
   .version == 1 and
-  (.captured_at | type == "number") and
-  (.primary == null or type == "object") and
-  (.secondary == null or type == "object")
+  (.captured_at | type == "number" and . >= 0 and floor == .) and
+  (.primary | valid_or_null) and
+  (.secondary | valid_or_null) and
+  (.primary != null or .secondary != null)
 ' "$CACHE_TEMP" >/dev/null || fail 'generated cache failed validation'
 mv "$CACHE_TEMP" "$CACHE_FILE" || fail 'cannot replace cache file'
 CACHE_TEMP=

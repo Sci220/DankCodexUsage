@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 [ "${1:-}" = "app-server" ] || exit 64
+if [ "${FAKE_CODEX_MODE:-success}" = exit-before-read ]; then
+  exit 0
+fi
 requests=$(mktemp)
 trap 'rm -f "$requests"' EXIT HUP INT TERM
 for request_number in 1 2 3 4; do
