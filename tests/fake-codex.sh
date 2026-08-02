@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 [ "${1:-}" = "app-server" ] || exit 64
+if [ -n "${FAKE_CODEX_STDERR_SENTINEL:-}" ]; then
+  printf '%s\n' "$FAKE_CODEX_STDERR_SENTINEL" >&2
+fi
 if [ "${FAKE_CODEX_MODE:-success}" = exit-before-read ]; then
   exit 0
 fi

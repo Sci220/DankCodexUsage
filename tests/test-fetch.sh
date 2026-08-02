@@ -143,14 +143,29 @@ run_mode success 1785686400
 assert_jq '.version == 1 and .captured_at == 1785686400'
 assert_jq '.primary == {"used_percentage":25,"window_minutes":300,"resets_at":1785690000}'
 assert_jq '.secondary == {"used_percentage":8,"window_minutes":10080,"resets_at":1786291200}'
-jq -s -e '
-  .[0].id == 1 and .[0].method == "initialize" and
-  .[0].params.clientInfo.name == "DankCodexUsage" and
-  .[0].params.clientInfo.version == "0.1.0" and
-  .[1].method == "initialized" and
-  .[2].id == 2 and .[2].method == "account/read" and
-  .[3].id == 3 and .[3].method == "account/rateLimits/read"
-' "$REQUEST_LOG" >/dev/null || fail "handshake"
+jq -s -e '. == [
+  {"id": 1, "method": "initialize", "params": {
+    "clientInfo": {"name": "DankCodexUsage", "version": "0.1.0"}
+  }},
+  {"method": "initialized", "params": {}},
+  {"id": 2, "method": "account/read", "params": {}},
+  {"id": 3, "method": "account/rateLimits/read"}
+]' "$REQUEST_LOG" >/dev/null || fail "handshake"
+
+child_stderr_sentinel='APP_SERVER_STDERR_SENTINEL_ACCOUNT_DETAIL'
+helper_stderr=$TMPDIR_TEST/helper.stderr
+FAKE_CODEX_MODE=success \
+FAKE_CODEX_FIXTURE_DIR=$ROOT/fixtures \
+FAKE_CODEX_STDERR_SENTINEL=$child_stderr_sentinel \
+CODEX_USAGE_CACHE_DIR=$TMPDIR_TEST/cache \
+CODEX_USAGE_CODEX_BIN=$TMPDIR_TEST/bin/codex \
+CODEX_USAGE_NOW=1785686450 \
+CODEX_USAGE_FORCE=1 \
+sh "$ROOT/fetch-usage.sh" >/dev/null 2>"$helper_stderr" \
+  || fail "stderr containment refresh failed"
+if grep -F "$child_stderr_sentinel" "$helper_stderr" >/dev/null; then
+  fail "app-server stderr escaped helper containment"
+fi
 
 run_mode multi-bucket 1785686500
 assert_jq '.primary.used_percentage == 25'
@@ -311,6 +326,45 @@ CODEX_USAGE_CODEX_BIN=$TMPDIR_TEST/bin/codex \
 CODEX_USAGE_NOW=1785686801 \
 sh "$ROOT/fetch-usage.sh" || fail "300-second cache did not refresh"
 [ "$(wc -l < "$INVOCATION_LOG")" -eq 1 ] || fail "300-second cache did not invoke Codex once"
+
+run_mode success 1785686900
+rm -f "$INVOCATION_LOG"
+FAKE_CODEX_MODE=success \
+FAKE_CODEX_FIXTURE_DIR=$ROOT/fixtures \
+FAKE_CODEX_INVOCATION_LOG=$INVOCATION_LOG \
+CODEX_USAGE_CACHE_DIR=$TMPDIR_TEST/cache \
+CODEX_USAGE_CODEX_BIN=$TMPDIR_TEST/bin/codex \
+CODEX_USAGE_NOW=1785686800 \
+sh "$ROOT/fetch-usage.sh" || fail "future-dated cache refresh failed"
+[ -e "$INVOCATION_LOG" ] || fail "future-dated cache did not invoke Codex"
+[ "$(wc -l < "$INVOCATION_LOG")" -eq 1 ] || fail "future-dated cache invoked Codex more than once"
+
+run_mode success 1785689900
+rm -f "$INVOCATION_LOG"
+FAKE_CODEX_MODE=success \
+FAKE_CODEX_FIXTURE_DIR=$ROOT/fixtures \
+FAKE_CODEX_INVOCATION_LOG=$INVOCATION_LOG \
+CODEX_USAGE_CACHE_DIR=$TMPDIR_TEST/cache \
+CODEX_USAGE_CODEX_BIN=$TMPDIR_TEST/bin/codex \
+CODEX_USAGE_NOW=1785690000 \
+sh "$ROOT/fetch-usage.sh" || fail "fresh cache with expired window refresh failed"
+[ -e "$INVOCATION_LOG" ] || fail "fresh cache with expired window did not invoke Codex"
+[ "$(wc -l < "$INVOCATION_LOG")" -eq 1 ] || fail "fresh cache with expired window invoked Codex more than once"
+
+jq -n '{version: 1, captured_at: 1785686800, primary: null, secondary: null}' \
+  >"$TMPDIR_TEST/cache/usage.json"
+rm -f "$INVOCATION_LOG"
+FAKE_CODEX_MODE=success \
+FAKE_CODEX_FIXTURE_DIR=$ROOT/fixtures \
+FAKE_CODEX_INVOCATION_LOG=$INVOCATION_LOG \
+CODEX_USAGE_CACHE_DIR=$TMPDIR_TEST/cache \
+CODEX_USAGE_CODEX_BIN=$TMPDIR_TEST/bin/codex \
+CODEX_USAGE_NOW=1785686900 \
+sh "$ROOT/fetch-usage.sh" || fail "all-null cache recovery refresh failed"
+[ -e "$INVOCATION_LOG" ] || fail "all-null cache suppressed Codex refresh"
+[ "$(wc -l < "$INVOCATION_LOG")" -eq 1 ] || fail "all-null cache recovery invoked Codex more than once"
+assert_jq '.captured_at == 1785686900 and .primary.used_percentage == 25'
+
 rm -f "$INVOCATION_LOG"
 FAKE_CODEX_MODE=success \
 FAKE_CODEX_FIXTURE_DIR=$ROOT/fixtures \

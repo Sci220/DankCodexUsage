@@ -58,6 +58,8 @@ Singleton {
             const value = JSON.parse(text)
             if (value.version !== 1 || !isInteger(value.captured_at) || value.captured_at < 0)
                 return
+            if (value.primary === null && value.secondary === null)
+                return
             if ((value.primary !== null && !isWindow(value.primary))
                     || (value.secondary !== null && !isWindow(value.secondary)))
                 return

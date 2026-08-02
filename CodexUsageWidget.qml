@@ -163,6 +163,8 @@ PluginComponent {
                     iconName: "refresh"
                     iconSize: Theme.iconSize - 4
                     iconColor: Theme.surfaceText
+                    Accessible.name: "Refresh Codex usage"
+                    tooltipText: "Refresh Codex usage"
                     enabled: !CodexUsageData.refreshing
                     opacity: enabled ? 1.0 : 0.5
                     onClicked: CodexUsageData.refresh(true)
@@ -225,6 +227,15 @@ PluginComponent {
                             }
                         }
                     }
+                }
+
+                StyledText {
+                    id: refreshStatus
+                    width: parent.width
+                    visible: CodexUsageData.refreshing
+                    text: root.hasData ? "Refreshing…" : "Loading…"
+                    color: Theme.surfaceTextMedium
+                    font.pixelSize: Theme.fontSizeSmall
                 }
 
                 StyledText {

@@ -74,14 +74,18 @@ exec 9>"$LOCK_FILE" || fail dependency_missing 'cannot acquire helper lock'
 flock 9 || fail dependency_missing 'cannot acquire helper lock'
 
 if [ "${CODEX_USAGE_FORCE:-}" != 1 ] && [ -f "$CACHE_FILE" ]; then
-  captured_at=$(jq -r '.captured_at // empty' "$CACHE_FILE" 2>/dev/null || true)
-  case $captured_at in
-    ''|*[!0-9]*) ;;
-    *)
-      age=$((NOW - captured_at))
-      [ "$age" -lt "$REFRESH_SECONDS" ] && exit 0
-      ;;
-  esac
+  if jq -e --argjson now "$NOW" --argjson refresh_seconds "$REFRESH_SECONDS" '
+    . as $cache |
+    ($cache.captured_at | type == "number" and . >= 0 and floor == .) and
+    (($now - $cache.captured_at) >= 0) and
+    (($now - $cache.captured_at) < $refresh_seconds) and
+    ($cache.primary != null or $cache.secondary != null) and
+    ([$cache.primary, $cache.secondary] | all(.[];
+      . == null or
+      (type == "object" and (.resets_at | type == "number" and . > $now))))
+  ' "$CACHE_FILE" >/dev/null 2>&1; then
+    exit 0
+  fi
 fi
 
 for dependency in setsid mktemp; do
@@ -102,7 +106,7 @@ mkfifo "$INPUT_FIFO" "$OUTPUT_FIFO" || fail refresh_failed 'cannot create app-se
 exec 7<>"$INPUT_FIFO"
 (cat "$OUTPUT_FIFO" >"$RESPONSES"; : >"$READER_DONE") &
 READER_PID=$!
-setsid "$CODEX_BIN" app-server <&7 >"$OUTPUT_FIFO" &
+setsid "$CODEX_BIN" app-server <&7 >"$OUTPUT_FIFO" 2>/dev/null &
 APP_PID=$!
 
 setsid sh -c 'sleep "$1"; : > "$2"; kill -TERM "-$3" 2>/dev/null || true' sh \
@@ -113,10 +117,10 @@ if [ -n "${CODEX_USAGE_TEST_PRE_REQUEST_DELAY_SECONDS:-}" ]; then
   sleep "$CODEX_USAGE_TEST_PRE_REQUEST_DELAY_SECONDS"
 fi
 printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"DankCodexUsage","version":"0.1.0"}}}' \
-  '{"jsonrpc":"2.0","method":"initialized","params":{}}' \
-  '{"jsonrpc":"2.0","id":2,"method":"account/read","params":{}}' \
-  '{"jsonrpc":"2.0","id":3,"method":"account/rateLimits/read","params":{}}' >&7 || fail refresh_failed 'cannot write app-server request'
+  '{"id":1,"method":"initialize","params":{"clientInfo":{"name":"DankCodexUsage","version":"0.1.0"}}}' \
+  '{"method":"initialized","params":{}}' \
+  '{"id":2,"method":"account/read","params":{}}' \
+  '{"id":3,"method":"account/rateLimits/read"}' >&7 || fail refresh_failed 'cannot write app-server request'
 exec 7>&-
 
 responses_complete() {
@@ -141,20 +145,32 @@ kill -TERM "-$WATCHDOG_PID" 2>/dev/null || true
 wait "$WATCHDOG_PID" 2>/dev/null || true
 WATCHDOG_PID=
 
-rpc_status=$(jq -s -r '
-  def response($id): map(select(.id == $id)) | last;
-  [response(1), response(2), response(3)] as $responses |
-  if any($responses[]; (type != "object") or ((.result? == null) and (.error? == null))) then "failed"
-  elif any($responses[]; .error? != null) then
-    if any($responses[]; .error? != null and
-      (.error.code == -32601 or ((.error.message? // "") | test("method not found"; "i"))))
-    then "unsupported" else "failed" end
-  else "ok" end
-' "$RESPONSES") || fail refresh_failed 'invalid initialize response'
-case $rpc_status in
+classify_rpc_response() {
+  response_id=$1
+  jq -s -r --argjson response_id "$response_id" '
+    map(select(.id == $response_id)) | last as $response |
+    if ($response | type) != "object"
+        or (($response.result? == null) and ($response.error? == null)) then "failed"
+    elif $response.error? != null then
+      if $response.error.code == -32601
+          or (($response.error.message? // "") | test("method not found"; "i"))
+      then "unsupported" else "failed" end
+    else "ok" end
+  ' "$RESPONSES"
+}
+
+initialize_rpc_status=$(classify_rpc_response 1) || fail refresh_failed 'invalid initialize response'
+case $initialize_rpc_status in
   ok) ;;
   unsupported) fail codex_version_unsupported 'installed Codex does not support usage refresh' ;;
-  *) fail refresh_failed 'Codex RPC request failed' ;;
+  *) fail refresh_failed 'Codex initialize request failed' ;;
+esac
+
+account_rpc_status=$(classify_rpc_response 2) || fail refresh_failed 'invalid account response'
+case $account_rpc_status in
+  ok) ;;
+  unsupported) fail codex_version_unsupported 'installed Codex does not support usage refresh' ;;
+  *) fail refresh_failed 'Codex account request failed' ;;
 esac
 
 auth_mode=$(jq -s -r '
@@ -165,6 +181,13 @@ case $auth_mode in
   chatgpt) ;;
   apiKey|api_key|api-key|apikey|api) fail api_key_unsupported 'API-key authentication does not provide usage limits' ;;
   *) fail chatgpt_sign_in_required 'sign in to ChatGPT in Codex' ;;
+esac
+
+rate_limits_rpc_status=$(classify_rpc_response 3) || fail refresh_failed 'invalid rate-limit response'
+case $rate_limits_rpc_status in
+  ok) ;;
+  unsupported) fail codex_version_unsupported 'installed Codex does not support usage refresh' ;;
+  *) fail refresh_failed 'Codex rate-limit request failed' ;;
 esac
 
 jq -s -e '
