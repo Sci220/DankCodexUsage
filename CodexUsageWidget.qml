@@ -66,43 +66,38 @@ PluginComponent {
         }
     }
 
+    // Bare Row, no own background or padding: the DankBar draws the pill
+    // capsule itself, and bar-aware sizing (iconSize, barTextSize) keeps the
+    // widget the same height and font as the built-in and reference widgets.
     horizontalBarPill: Component {
-        StyledRect {
-            id: pill
-            implicitWidth: row.implicitWidth + Theme.spacingM * 2
-            height: root.widgetThickness
-            radius: Theme.cornerRadius
-            color: Theme.surfaceContainerHigh
+        Row {
+            spacing: Theme.spacingXS
 
-            Row {
-                id: row
-                anchors.centerIn: parent
-                spacing: Theme.spacingS
+            StyledText {
+                visible: !root.hasData
+                text: "✳ --"
+                color: Theme.surfaceTextMedium
+                font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+                anchors.verticalCenter: parent.verticalCenter
+            }
 
-                StyledText {
-                    visible: !root.hasData
-                    text: "✳ --"
-                    color: Theme.surfaceTextMedium
-                    font.pixelSize: Theme.fontSizeMedium
-                }
-
-                Repeater {
-                    model: root.hasData ? root.limits().filter(limit => limit.value !== null) : []
-                    delegate: Row {
-                        spacing: Theme.spacingXS
-                        UsageRing {
-                            percentage: modelData.value.used_percentage
-                            ringColor: root.color(modelData.value.used_percentage)
-                            diameter: Math.max(12, Math.min(root.widgetThickness - Theme.spacingM * 2, 18))
-                            accessibleName: root.accessibleLimitName(modelData)
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-                        StyledText {
-                            text: root.percentage(modelData)
-                            color: Theme.surfaceText
-                            font.pixelSize: Theme.fontSizeMedium
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
+            Repeater {
+                model: root.hasData ? root.limits().filter(limit => limit.value !== null) : []
+                delegate: Row {
+                    spacing: Theme.spacingXS
+                    anchors.verticalCenter: parent.verticalCenter
+                    UsageRing {
+                        percentage: modelData.value.used_percentage
+                        ringColor: root.color(modelData.value.used_percentage)
+                        diameter: root.iconSize
+                        accessibleName: root.accessibleLimitName(modelData)
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    StyledText {
+                        text: root.percentage(modelData)
+                        color: Theme.surfaceText
+                        font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+                        anchors.verticalCenter: parent.verticalCenter
                     }
                 }
             }
@@ -110,42 +105,34 @@ PluginComponent {
     }
 
     verticalBarPill: Component {
-        StyledRect {
-            id: pill
-            width: root.widgetThickness
-            implicitHeight: column.implicitHeight + Theme.spacingM * 2
-            radius: Theme.cornerRadius
-            color: Theme.surfaceContainerHigh
+        Column {
+            spacing: Theme.spacingXS
 
-            Column {
-                id: column
-                anchors.centerIn: parent
-                spacing: Theme.spacingS
+            StyledText {
+                visible: !root.hasData
+                text: "✳ --"
+                color: Theme.surfaceTextMedium
+                font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+                anchors.horizontalCenter: parent.horizontalCenter
+            }
 
-                StyledText {
-                    visible: !root.hasData
-                    text: "✳ --"
-                    color: Theme.surfaceTextMedium
-                    font.pixelSize: Theme.fontSizeSmall
-                }
-
-                Repeater {
-                    model: root.hasData ? root.limits().filter(limit => limit.value !== null) : []
-                    delegate: Column {
-                        spacing: Theme.spacingXS
-                        UsageRing {
-                            percentage: modelData.value.used_percentage
-                            ringColor: root.color(modelData.value.used_percentage)
-                            diameter: Math.max(12, Math.min(root.widgetThickness - Theme.spacingM * 2, 18))
-                            accessibleName: root.accessibleLimitName(modelData)
-                            anchors.horizontalCenter: parent.horizontalCenter
-                        }
-                        StyledText {
-                            text: root.percentage(modelData)
-                            color: Theme.surfaceText
-                            font.pixelSize: Theme.fontSizeSmall
-                            anchors.horizontalCenter: parent.horizontalCenter
-                        }
+            Repeater {
+                model: root.hasData ? root.limits().filter(limit => limit.value !== null) : []
+                delegate: Column {
+                    spacing: Theme.spacingXS
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    UsageRing {
+                        percentage: modelData.value.used_percentage
+                        ringColor: root.color(modelData.value.used_percentage)
+                        diameter: root.iconSize
+                        accessibleName: root.accessibleLimitName(modelData)
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
+                    StyledText {
+                        text: root.percentage(modelData)
+                        color: Theme.surfaceText
+                        font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+                        anchors.horizontalCenter: parent.horizontalCenter
                     }
                 }
             }

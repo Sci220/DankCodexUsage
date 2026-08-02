@@ -98,10 +98,14 @@ grep -F 'id: refreshStatus' "$WIDGET" >/dev/null || fail "refresh status footer"
 grep -F 'visible: CodexUsageData.refreshing' "$WIDGET" >/dev/null || fail "refresh status visibility"
 grep -F 'text: root.hasData ? "Refreshing…" : "Loading…"' "$WIDGET" >/dev/null || fail "loading and refreshing status copy"
 grep -F 'PopoutComponent {' "$WIDGET" >/dev/null || fail "popout"
-grep -F 'height: root.widgetThickness' "$WIDGET" >/dev/null || fail "horizontal pill root thickness"
-grep -F 'width: root.widgetThickness' "$WIDGET" >/dev/null || fail "vertical pill root thickness"
-diameter_count=$(grep -F 'Math.min(root.widgetThickness - Theme.spacingM * 2, 18)' "$WIDGET" | wc -l | tr -d ' ')
-[ "$diameter_count" -eq 2 ] || fail "ring diameters use root thickness"
+# Pills must stay bare rows/columns sized by the bar-aware helpers so the
+# widget matches the dimensions of built-in and reference bar widgets; the
+# DankBar draws the pill capsule itself.
+grep -F 'StyledRect' "$WIDGET" >/dev/null && fail "pills must not draw their own background"
+diameter_count=$(grep -F 'diameter: root.iconSize' "$WIDGET" | wc -l | tr -d ' ')
+[ "$diameter_count" -eq 2 ] || fail "pill ring diameters use bar-aware iconSize"
+bartext_count=$(grep -F 'Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)' "$WIDGET" | wc -l | tr -d ' ')
+[ "$bartext_count" -eq 4 ] || fail "pill text uses bar-aware barTextSize"
 grep -F 'return limit.value === null' "$WIDGET" >/dev/null || fail "unavailable accessible branch"
 grep -F 'root.label(limit) + ", usage unavailable"' "$WIDGET" >/dev/null || fail "unavailable accessible copy"
 accessible_count=$(grep -F 'accessibleName: root.accessibleLimitName(modelData)' "$WIDGET" | wc -l | tr -d ' ')
