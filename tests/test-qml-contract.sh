@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+ROOT=${DANK_CODEX_USAGE_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}
 DATA="$ROOT/CodexUsageData.qml"
 WIDGET="$ROOT/CodexUsageWidget.qml"
 RING="$ROOT/UsageRing.qml"
@@ -80,9 +80,11 @@ grep -F 'horizontalBarPill: Component {' "$WIDGET" >/dev/null || fail "horizonta
 grep -F 'verticalBarPill: Component {' "$WIDGET" >/dev/null || fail "vertical pill"
 grep -F 'readonly property int warnPct: 70' "$WIDGET" >/dev/null || fail "warning threshold"
 grep -F 'readonly property int critPct: 90' "$WIDGET" >/dev/null || fail "critical threshold"
-grep -F 'CodexUsageData.refresh(true)' "$WIDGET" >/dev/null || fail "manual refresh"
-grep -F 'enabled: !CodexUsageData.refreshing' "$WIDGET" >/dev/null || fail "manual refresh disabled while busy"
-grep -F 'opacity: enabled ? 1.0 : 0.5' "$WIDGET" >/dev/null || fail "manual refresh busy affordance"
+refresh_action=$(awk '/headerActions: Component \{/{inside=1} inside{print} inside && /onClicked:/{exit}' "$WIDGET")
+printf '%s\n' "$refresh_action" | grep -F 'DankActionButton {' >/dev/null || fail "manual refresh action"
+printf '%s\n' "$refresh_action" | grep -F 'enabled: !CodexUsageData.refreshing' >/dev/null || fail "manual refresh disabled while busy"
+printf '%s\n' "$refresh_action" | grep -F 'opacity: enabled ? 1.0 : 0.5' >/dev/null || fail "manual refresh busy affordance"
+printf '%s\n' "$refresh_action" | grep -Fx '                    onClicked: CodexUsageData.refresh(true)' >/dev/null || fail "manual refresh handler"
 grep -F 'PopoutComponent {' "$WIDGET" >/dev/null || fail "popout"
 grep -F 'height: root.widgetThickness' "$WIDGET" >/dev/null || fail "horizontal pill root thickness"
 grep -F 'width: root.widgetThickness' "$WIDGET" >/dev/null || fail "vertical pill root thickness"
