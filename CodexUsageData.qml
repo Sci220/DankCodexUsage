@@ -164,11 +164,6 @@ Singleton {
         checkWindowReset("secondary")
     }
 
-    Component.onCompleted: {
-        cacheFile.reload()
-        errorFile.reload()
-    }
-
     Timer {
         interval: root.refreshSeconds * 1000
         running: true
@@ -186,10 +181,12 @@ Singleton {
         }
     }
 
+    // preload (the default) must stay on: with preload disabled, FileView never
+    // pushes `path` to its backend until text()/data() is called, so reload()
+    // is silently a no-op and loaded/loadFailed never fire (quickshell 0.3.0).
     FileView {
         id: cacheFile
         path: root.cachePath
-        preload: false
         watchChanges: true
         onLoaded: {
             root.loadUsage(cacheFile.text())
@@ -204,7 +201,6 @@ Singleton {
     FileView {
         id: errorFile
         path: root.errorPath
-        preload: false
         watchChanges: true
         onLoaded: root.loadError(errorFile.text())
         onLoadFailed: function(error) {

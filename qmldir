@@ -1,2 +1,1 @@
-module DankCodexUsage
 singleton CodexUsageData 1.0 CodexUsageData.qml

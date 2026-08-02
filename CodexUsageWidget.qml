@@ -4,7 +4,9 @@ import QtQuick.Layouts
 import qs.Common
 import qs.Widgets
 import qs.Modules.Plugins
-import DankCodexUsage 1.0
+// The implicit directory import ignores qmldir singleton declarations; the
+// explicit "." import is required for CodexUsageData to resolve as a singleton.
+import "."
 
 PluginComponent {
     id: root
@@ -165,31 +167,11 @@ PluginComponent {
                     iconSize: Theme.iconSize - 4
                     iconColor: Theme.surfaceText
                     Accessible.name: "Refresh Codex usage"
+                    tooltipText: "Refresh Codex usage"
+                    tooltipSide: "left"
                     enabled: !CodexUsageData.refreshing
                     opacity: enabled ? 1.0 : 0.5
                     onClicked: CodexUsageData.refresh(true)
-
-                    Rectangle {
-                        id: refreshTooltip
-                        width: refreshTooltipLabel.contentWidth + Theme.spacingS * 2
-                        height: refreshTooltipLabel.contentHeight + Theme.spacingXS * 2
-                        radius: Theme.cornerRadiusSmall
-                        color: Theme.surfaceContainer
-                        border.color: Theme.outline
-                        border.width: 1
-                        anchors.right: parent.left
-                        anchors.rightMargin: Theme.spacingS
-                        anchors.verticalCenter: parent.verticalCenter
-                        visible: refreshButton.children[1].containsMouse
-
-                        StyledText {
-                            id: refreshTooltipLabel
-                            anchors.centerIn: parent
-                            text: "Refresh Codex usage"
-                            color: Theme.surfaceText
-                            font.pixelSize: Theme.fontSizeSmall
-                        }
-                    }
                 }
             }
 
