@@ -4,6 +4,7 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 DATA="$ROOT/CodexUsageData.qml"
 WIDGET="$ROOT/CodexUsageWidget.qml"
+RING="$ROOT/UsageRing.qml"
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
 grep -Fx 'pragma Singleton' "$DATA" >/dev/null || fail "singleton pragma"
@@ -53,6 +54,36 @@ if printf '%s\n' "$error_block" | grep -F 'root.errorCategory = ""' >/dev/null \
 fi
 if grep -F 'CodexUsageData {' "$WIDGET" >/dev/null; then
   fail "widget instantiates singleton"
+fi
+
+[ -f "$RING" ] || fail "missing usage ring"
+for symbol in \
+  'property int percentage' \
+  'property color ringColor' \
+  'property int diameter' \
+  'property real thickness' \
+  'property bool available' \
+  'property string accessibleName'; do
+  grep -F "$symbol" "$RING" >/dev/null || fail "ring $symbol"
+done
+grep -F 'readonly property real fraction: available ? Math.max(0, Math.min(1, percentage / 100)) : 0' "$RING" >/dev/null || fail "ring fraction clamp"
+grep -F 'function onPercentageChanged() { canvas.requestPaint() }' "$RING" >/dev/null || fail "ring percentage repaint"
+grep -F 'function onRingColorChanged() { canvas.requestPaint() }' "$RING" >/dev/null || fail "ring color repaint"
+grep -F 'function onAvailableChanged() { canvas.requestPaint() }' "$RING" >/dev/null || fail "ring availability repaint"
+grep -F 'Accessible.name: accessibleName' "$RING" >/dev/null || fail "ring accessibility name"
+grep -F 'Accessible.role: Accessible.Indicator' "$RING" >/dev/null || fail "ring accessibility role"
+
+grep -F 'PluginComponent {' "$WIDGET" >/dev/null || fail "widget component"
+grep -F 'pluginId: "codexUsage"' "$WIDGET" >/dev/null || fail "widget plugin id"
+grep -F 'import DankCodexUsage 1.0' "$WIDGET" >/dev/null || fail "widget singleton import"
+grep -F 'horizontalBarPill: Component {' "$WIDGET" >/dev/null || fail "horizontal pill"
+grep -F 'verticalBarPill: Component {' "$WIDGET" >/dev/null || fail "vertical pill"
+grep -F 'readonly property int warnPct: 70' "$WIDGET" >/dev/null || fail "warning threshold"
+grep -F 'readonly property int critPct: 90' "$WIDGET" >/dev/null || fail "critical threshold"
+grep -F 'CodexUsageData.refresh(true)' "$WIDGET" >/dev/null || fail "manual refresh"
+grep -F 'PopoutComponent {' "$WIDGET" >/dev/null || fail "popout"
+if grep -E 'displayStyle|displayMode|pluginData|settings' "$WIDGET" >/dev/null; then
+  fail "widget exposes settings or display mode"
 fi
 
 printf 'QML CONTRACT TESTS PASSED\n'
