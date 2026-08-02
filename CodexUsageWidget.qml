@@ -36,6 +36,12 @@ PluginComponent {
         return limit.value === null ? "--" : limit.value.used_percentage + "%"
     }
 
+    function accessibleLimitName(limit) {
+        return limit.value === null
+            ? root.label(limit) + ", usage unavailable"
+            : root.label(limit) + ", " + root.percentage(limit) + " used"
+    }
+
     function resetText(limit) {
         if (limit.value === null)
             return "Usage unavailable"
@@ -62,7 +68,7 @@ PluginComponent {
         StyledRect {
             id: pill
             implicitWidth: row.implicitWidth + Theme.spacingM * 2
-            height: parent.widgetThickness
+            height: root.widgetThickness
             radius: Theme.cornerRadius
             color: Theme.surfaceContainerHigh
 
@@ -85,8 +91,8 @@ PluginComponent {
                         UsageRing {
                             percentage: modelData.value.used_percentage
                             ringColor: root.color(modelData.value.used_percentage)
-                            diameter: Math.max(12, Math.min(pill.height - Theme.spacingM * 2, 18))
-                            accessibleName: root.label(modelData) + ", " + root.percentage(modelData) + " used"
+                            diameter: Math.max(12, Math.min(root.widgetThickness - Theme.spacingM * 2, 18))
+                            accessibleName: root.accessibleLimitName(modelData)
                             anchors.verticalCenter: parent.verticalCenter
                         }
                         StyledText {
@@ -104,7 +110,7 @@ PluginComponent {
     verticalBarPill: Component {
         StyledRect {
             id: pill
-            width: parent.widgetThickness
+            width: root.widgetThickness
             implicitHeight: column.implicitHeight + Theme.spacingM * 2
             radius: Theme.cornerRadius
             color: Theme.surfaceContainerHigh
@@ -128,8 +134,8 @@ PluginComponent {
                         UsageRing {
                             percentage: modelData.value.used_percentage
                             ringColor: root.color(modelData.value.used_percentage)
-                            diameter: Math.max(12, Math.min(pill.width - Theme.spacingM * 2, 18))
-                            accessibleName: root.label(modelData) + ", " + root.percentage(modelData) + " used"
+                            diameter: Math.max(12, Math.min(root.widgetThickness - Theme.spacingM * 2, 18))
+                            accessibleName: root.accessibleLimitName(modelData)
                             anchors.horizontalCenter: parent.horizontalCenter
                         }
                         StyledText {
@@ -180,7 +186,7 @@ PluginComponent {
                             available: windowAvailable
                             diameter: 30
                             thickness: 3.5
-                            accessibleName: root.label(modelData) + ", " + root.percentage(modelData) + " used"
+                            accessibleName: root.accessibleLimitName(modelData)
                             anchors.verticalCenter: parent.verticalCenter
                         }
 

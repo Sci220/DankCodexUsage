@@ -81,7 +81,17 @@ grep -F 'verticalBarPill: Component {' "$WIDGET" >/dev/null || fail "vertical pi
 grep -F 'readonly property int warnPct: 70' "$WIDGET" >/dev/null || fail "warning threshold"
 grep -F 'readonly property int critPct: 90' "$WIDGET" >/dev/null || fail "critical threshold"
 grep -F 'CodexUsageData.refresh(true)' "$WIDGET" >/dev/null || fail "manual refresh"
+grep -F 'enabled: !CodexUsageData.refreshing' "$WIDGET" >/dev/null || fail "manual refresh disabled while busy"
+grep -F 'opacity: enabled ? 1.0 : 0.5' "$WIDGET" >/dev/null || fail "manual refresh busy affordance"
 grep -F 'PopoutComponent {' "$WIDGET" >/dev/null || fail "popout"
+grep -F 'height: root.widgetThickness' "$WIDGET" >/dev/null || fail "horizontal pill root thickness"
+grep -F 'width: root.widgetThickness' "$WIDGET" >/dev/null || fail "vertical pill root thickness"
+diameter_count=$(grep -F 'Math.min(root.widgetThickness - Theme.spacingM * 2, 18)' "$WIDGET" | wc -l | tr -d ' ')
+[ "$diameter_count" -eq 2 ] || fail "ring diameters use root thickness"
+grep -F 'return limit.value === null' "$WIDGET" >/dev/null || fail "unavailable accessible branch"
+grep -F 'root.label(limit) + ", usage unavailable"' "$WIDGET" >/dev/null || fail "unavailable accessible copy"
+accessible_count=$(grep -F 'accessibleName: root.accessibleLimitName(modelData)' "$WIDGET" | wc -l | tr -d ' ')
+[ "$accessible_count" -eq 3 ] || fail "ring accessibility uses unavailable copy"
 if grep -E 'displayStyle|displayMode|pluginData|settings' "$WIDGET" >/dev/null; then
   fail "widget exposes settings or display mode"
 fi
