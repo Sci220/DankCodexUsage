@@ -32,7 +32,7 @@ Clicking the widget opens a popout with one row per window. Each row shows:
 
 - a duration-derived label, such as `5 hour` or `weekly`;
 - used percentage;
-- a live `resets in …` countdown; and
+- a `resets in …` countdown, updated at minute granularity (per-second ticking adds churn without information); and
 - an unavailable state when that window is absent.
 
 The footer shows `updated … ago`, current refresh status, and a manual refresh action. A failed refresh leaves the last valid rings visible while the popout reports the failure. If no valid cache exists, the bar renders an unavailable state rather than a fabricated zero.
@@ -46,21 +46,32 @@ There are no user-facing display settings in version 1. Refresh interval, stale 
 The helper is the only component that communicates with Codex. It:
 
 1. Checks that `codex` and `jq` are available.
-2. Acquires a short freshness lock so simultaneous widgets and monitors share one refresh.
-3. Starts `codex app-server` over its default JSONL stdio transport.
-4. Sends the required `initialize` request and `initialized` notification.
-5. Sends `account/read` to distinguish ChatGPT auth from unsupported API-key auth.
-6. Sends `account/rateLimits/read`.
-7. Selects the backward-compatible `rateLimits` object when its `limitId` is `codex`; otherwise it selects the `codex` entry from `rateLimitsByLimitId`.
-8. Normalizes the primary and secondary windows into a small cache document.
-9. Validates the normalized output and atomically replaces the cache.
-10. Terminates the app-server process and releases the lock.
+2. Acquires the freshness lock (see below) so simultaneous widgets and monitors share one refresh.
+3. After acquiring the lock, re-reads the cache and exits successfully if another invocation refreshed it within the refresh interval.
+4. Starts `codex app-server` over its default JSONL stdio transport.
+5. Sends the required `initialize` request — with a fixed `clientInfo` name (`DankCodexUsage`) and the plugin version — and the `initialized` notification. Fixtures and the real helper must send identical handshakes.
+6. Sends `account/read` to distinguish ChatGPT auth from unsupported API-key auth.
+7. Sends `account/rateLimits/read`.
+8. Selects the backward-compatible `rateLimits` object when its `limitId` is `codex`; otherwise it selects the `codex` entry from `rateLimitsByLimitId`. If neither yields a main `codex` bucket — even when other buckets exist — the helper reports `rate_limits_unavailable` rather than guessing; this is deliberate (truthful over inferred) and covered by a fixture.
+9. Normalizes the primary and secondary windows into a small cache document.
+10. Validates the normalized output and atomically replaces the cache.
+11. Terminates the app-server process and releases the lock.
 
-The helper has a hard timeout. It never sources, parses, prints, or copies Codex credential files. Diagnostic output is sanitized and must not contain app-server payloads that could include account details.
+**Locking.** The lock is `flock` on `lock` in the plugin cache directory, so the kernel releases it automatically if the helper dies — there is no stale-lock state to clean up. `mkdir`-style locks are explicitly not used.
+
+**Timeout and cleanup.** The helper enforces a hard 30-second timeout (a named constant). An EXIT trap kills the app-server's process group on every exit path — success, failure, or timeout — so a hung `codex app-server` is never left behind.
+
+**Helper contract.** On success the helper atomically writes the cache file and removes the error file, exiting 0. On failure it writes the error file, leaves the cache untouched, and exits non-zero. The helper never sources, parses, prints, or copies Codex credential files. Diagnostic output is sanitized and must not contain app-server payloads that could include account details.
+
+**Protocol drift.** Codex CLI `0.133.0` is the minimum supported version because its app-server rate-limit response shape is independently verified. A JSON-RPC "method not found" response to `account/read` or `account/rateLimits/read` maps to the dedicated `codex_version_unsupported` category, not the generic `refresh_failed`.
 
 ### `CodexUsageData.qml`
 
-This singleton-like data component owns cache loading and refresh timing. It exposes normalized primary and secondary values, cache age, stale state, refresh state, and a concise error category. It invokes the helper at startup, every five minutes, and on manual refresh. Countdown updates happen in QML and do not trigger network calls.
+This data component owns cache loading and refresh timing. It is a true Quickshell `pragma Singleton`, registered by a plugin-local `qmldir`, so multi-monitor DMS setups share one timer and one helper invocation. The widget imports that local module and accesses the singleton directly; it does not instantiate `CodexUsageData`.
+
+It exposes normalized primary and secondary values, cache age, stale state, refresh state, and a concise error category. At startup it loads the existing cache immediately, then at startup, on every timer tick, and on manual refresh it invokes the helper **only if the cache age exceeds the refresh interval** (five minutes, a named constant). This single rule debounces manual refresh, keeps redundant per-monitor instances idle, and self-corrects after resume from suspend on the first coarse timer tick. Countdown updates happen in QML and do not trigger network calls.
+
+When a window's `resets_at` passes while displayed, the shown percentage is known-stale: the UI switches that row to a "resetting…" state and the component triggers one early refresh instead of waiting out the timer.
 
 The component tolerates partially written or malformed cache input by retaining its last in-memory valid model. Atomic writes should prevent partial reads during normal operation.
 
@@ -78,10 +89,19 @@ The DMS manifest registers the widget, declares the minimum compatible DMS plugi
 
 ## Data Contract
 
-The cache file is stored below the user's cache directory and contains only display data:
+All state lives in `${XDG_CACHE_HOME:-$HOME/.cache}/DankCodexUsage/`:
+
+| File | Purpose |
+|------|---------|
+| `usage.json` | Last-good usage cache (below) |
+| `error.json` | Most recent failure, if any |
+| `lock` | `flock` target for the freshness lock |
+
+The cache file contains only display data:
 
 ```json
 {
+  "version": 1,
   "captured_at": 1785686400,
   "primary": {
     "used_percentage": 25,
@@ -96,7 +116,20 @@ The cache file is stored below the user's cache directory and contains only disp
 }
 ```
 
-`captured_at` and `resets_at` are Unix epoch seconds. `primary` and `secondary` may be `null` when Codex does not return a window. For present windows, all three fields are required numeric values. Percentages are clamped only for rendering; clearly malformed values cause validation failure instead of silently replacing the cache.
+`version` identifies the cache schema for future migration. `captured_at` and `resets_at` are Unix epoch seconds. `primary` and `secondary` may be `null` when Codex does not return a window. For present windows, all three fields are required numeric values. Percentages are clamped only for rendering; clearly malformed values cause validation failure instead of silently replacing the cache.
+
+The error file is the other half of the shell↔QML seam and has its own schema:
+
+```json
+{
+  "version": 1,
+  "category": "timeout",
+  "occurred_at": 1785686400,
+  "detail": "app-server did not respond within 30s"
+}
+```
+
+`category` is one of the stable categories in Error Handling. `detail` is optional, sanitized, and intended for the popout's failure line — never raw app-server payloads.
 
 Window labels are derived from `window_minutes`. Known friendly cases include hours, days, and a seven-day `weekly` label. Unknown durations remain explicit, for example `90 minute`, so the UI remains truthful if OpenAI changes quota windows.
 
@@ -109,6 +142,7 @@ The helper maps failures into stable categories that QML can present:
 - `chatgpt_sign_in_required`: no ChatGPT-managed account is active.
 - `api_key_unsupported`: Codex uses API-key authentication, for which ChatGPT subscription limits do not apply.
 - `rate_limits_unavailable`: authentication succeeds but no main Codex rate-limit bucket is returned.
+- `codex_version_unsupported`: the installed Codex CLI lacks the required app-server methods (JSON-RPC "method not found").
 - `timeout`: the local app-server or upstream request did not finish in time.
 - `refresh_failed`: protocol, parsing, or other connection failure.
 
@@ -128,15 +162,19 @@ Errors are written separately from the last-good cache so a failed refresh canno
 Shell tests use a fake `codex` executable that implements the app-server JSONL exchange. They require no network and cover:
 
 - successful handshake and primary/secondary normalization;
-- selection of the main `codex` bucket;
+- selection of the main `codex` bucket, including `rateLimitsByLimitId` with multiple entries where `codex` must win;
+- `rateLimitsByLimitId` containing only non-`codex` entries → `rate_limits_unavailable` (the deliberate no-guessing choice);
 - absent secondary window;
 - missing Codex and missing dependency errors;
 - ChatGPT sign-in and unsupported API-key states;
+- JSON-RPC "method not found" → `codex_version_unsupported`;
 - malformed JSON and protocol errors;
-- timeout behavior;
+- tolerance of unknown extra fields in responses (forward compatibility);
+- timeout behavior, including that the app-server process group is killed;
 - percentage and timestamp validation;
-- atomic last-good cache preservation; and
-- freshness-lock behavior across concurrent invocations.
+- atomic last-good cache preservation;
+- freshness-lock behavior across concurrent invocations; and
+- lock recovery when a previous holder died (flock auto-release).
 
 Manifest tests validate required DMS metadata and referenced files. `shellcheck`, `jq`, and `qmllint` are run when available. Final verification loads the plugin in DMS, checks both rings and the popout against the active theme, triggers a manual refresh, and confirms correct stale/error behavior by substituting the fake app-server.
 
@@ -150,6 +188,7 @@ DankCodexUsage/
 ├── CodexUsageData.qml
 ├── CodexUsageWidget.qml
 ├── UsageRing.qml
+├── qmldir
 ├── fetch-usage.sh
 ├── plugin.json
 ├── README.md
