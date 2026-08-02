@@ -1,0 +1,14 @@
+{
+  "id": "codexUsage",
+  "name": "Codex Usage",
+  "description": "OpenAI Codex primary and secondary subscription limits in the bar.",
+  "version": "0.1.0",
+  "author": "Eduards",
+  "type": "widget",
+  "capabilities": ["dankbar-widget"],
+  "component": "./CodexUsageWidget.qml",
+  "icon": "speed",
+  "requires_dms": ">=0.1.0",
+  "requires": ["codex", "jq", "flock", "setsid"],
+  "permissions": ["process"]
+}
