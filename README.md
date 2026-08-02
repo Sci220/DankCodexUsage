@@ -15,9 +15,11 @@ API-key sessions do not expose ChatGPT subscription rate limits and are not supp
 
 ## Install
 
-Obtain a repository checkout (for example, clone it from its published remote once one is available), enter the DankCodexUsage repository root, and link that checkout into the DMS plugin directory:
+Clone the repository, enter its root, and link the checkout into the DMS plugin directory:
 
 ```sh
+git clone https://github.com/Sci220/DankCodexUsage.git
+cd DankCodexUsage
 mkdir -p "$HOME/.config/DankMaterialShell/plugins"
 ln -s "$(pwd)" "$HOME/.config/DankMaterialShell/plugins/codexUsage"
 ```
