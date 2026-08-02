@@ -22,11 +22,16 @@ done
 [ -f "$ROOT/README.md" ] || fail "missing README"
 [ -f "$ROOT/LICENSE" ] || fail "missing license"
 for text in \
+  'DankMaterialShell 0.1.0 or newer' \
   'Codex CLI 0.133.0' \
   'codex login' \
   'account/rateLimits/read' \
   '~/.config/DankMaterialShell/plugins/codexUsage' \
-  'API-key sessions'; do
+  'API-key sessions' \
+  'private `mktemp` workspace' \
+  'normal cleanup' \
+  '`rate_limits_unavailable`' \
+  'does not guess another bucket'; do
   grep -F "$text" "$ROOT/README.md" >/dev/null || fail "README mention: $text"
 done
 grep -E 'does not read[^`]*`?~/.codex/auth\.json`?' "$ROOT/README.md" >/dev/null \

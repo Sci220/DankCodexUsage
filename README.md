@@ -6,7 +6,7 @@ The rings follow the active DMS theme. Usage below 70% uses the theme primary co
 
 ## Requirements
 
-- DankMaterialShell with plugin support
+- DankMaterialShell 0.1.0 or newer with plugin support
 - Codex CLI 0.133.0 or newer
 - a ChatGPT account active in Codex via `codex login`
 - `jq`, `flock`, and `setsid`
@@ -40,7 +40,7 @@ State is stored under `${XDG_CACHE_HOME:-$HOME/.cache}/DankCodexUsage/`:
 - `error.json` contains the latest sanitized error category and detail.
 - `lock` coordinates refreshes with `flock`.
 
-Codex itself owns authentication and upstream communication. The plugin does not read `~/.codex/auth.json`, environment API keys, or any other credential store, and it never persists credentials or raw app-server responses. It does not log in, log out, purchase credits, consume reset credits, or otherwise change account state.
+Codex itself owns authentication and upstream communication. The plugin does not read `~/.codex/auth.json`, environment API keys, or any other credential store. Its long-lived cache files contain only normalized display data and sanitized errors. During a refresh, the helper writes raw JSONL only inside a private `mktemp` workspace; normal cleanup removes that workspace on regular exit and handled signals. An uncatchable `SIGKILL` cannot run shell cleanup traps, so forcibly terminated temporary data may require operating-system cleanup. The plugin does not log in, log out, purchase credits, consume reset credits, or otherwise change account state.
 
 ## Troubleshooting
 
@@ -48,6 +48,7 @@ Codex itself owns authentication and upstream communication. The plugin does not
 - **Sign in to Codex with ChatGPT:** run `codex login` and choose ChatGPT authentication.
 - **API-key sessions do not expose ChatGPT limits:** sign in with ChatGPT instead of an API key.
 - **Installed Codex is unsupported:** update Codex if `account/read` or `account/rateLimits/read` is unavailable.
+- **`rate_limits_unavailable`:** the authenticated account returned no main `codex` bucket. Update Codex and retry, then check whether usage limits are available for the active account. The helper does not guess another bucket.
 - **A dependency is missing:** install `jq`, `flock`, and `setsid` through the operating system package manager.
 - **Refresh timed out or failed:** retry after checking local connectivity. Valid cached usage remains intact.
 - **Widget is not listed:** confirm the directory is exactly `~/.config/DankMaterialShell/plugins/codexUsage`, then scan again in DMS Settings → Plugins.
