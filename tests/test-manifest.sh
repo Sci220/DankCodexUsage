@@ -19,5 +19,17 @@ done
 [ -f "$ROOT/CodexUsageWidget.qml" ] || fail "missing widget"
 [ -f "$ROOT/CodexUsageData.qml" ] || fail "missing data singleton"
 [ -f "$ROOT/fetch-usage.sh" ] || fail "missing helper"
+[ -f "$ROOT/README.md" ] || fail "missing README"
+[ -f "$ROOT/LICENSE" ] || fail "missing license"
+for text in \
+  'Codex CLI 0.133.0' \
+  'codex login' \
+  'account/rateLimits/read' \
+  '~/.config/DankMaterialShell/plugins/codexUsage' \
+  'API-key sessions'; do
+  grep -F "$text" "$ROOT/README.md" >/dev/null || fail "README mention: $text"
+done
+grep -E 'does not read[^`]*`?~/.codex/auth\.json`?' "$ROOT/README.md" >/dev/null \
+  || fail "README must say the plugin does not read ~/.codex/auth.json"
 grep -Fx 'singleton CodexUsageData 1.0 CodexUsageData.qml' "$ROOT/qmldir" >/dev/null || fail "singleton registration"
 printf 'MANIFEST TESTS PASSED\n'
