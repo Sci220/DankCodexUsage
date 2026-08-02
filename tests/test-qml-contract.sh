@@ -81,12 +81,17 @@ grep -F 'horizontalBarPill: Component {' "$WIDGET" >/dev/null || fail "horizonta
 grep -F 'verticalBarPill: Component {' "$WIDGET" >/dev/null || fail "vertical pill"
 grep -F 'readonly property int warnPct: 70' "$WIDGET" >/dev/null || fail "warning threshold"
 grep -F 'readonly property int critPct: 90' "$WIDGET" >/dev/null || fail "critical threshold"
-refresh_action=$(awk '/headerActions: Component \{/{inside=1} inside{print} inside && /onClicked:/{exit}' "$WIDGET")
+refresh_action=$(awk '/headerActions: Component \{/{inside=1} inside{print} inside && /^                }$/{exit}' "$WIDGET")
 printf '%s\n' "$refresh_action" | grep -F 'DankActionButton {' >/dev/null || fail "manual refresh action"
 printf '%s\n' "$refresh_action" | grep -F 'enabled: !CodexUsageData.refreshing' >/dev/null || fail "manual refresh disabled while busy"
 printf '%s\n' "$refresh_action" | grep -F 'opacity: enabled ? 1.0 : 0.5' >/dev/null || fail "manual refresh busy affordance"
 printf '%s\n' "$refresh_action" | grep -F 'Accessible.name: "Refresh Codex usage"' >/dev/null || fail "manual refresh accessible name"
-printf '%s\n' "$refresh_action" | grep -F 'tooltipText: "Refresh Codex usage"' >/dev/null || fail "manual refresh tooltip"
+if printf '%s\n' "$refresh_action" | grep -F 'tooltipText:' >/dev/null; then
+  fail "manual refresh uses unsupported DankActionButton tooltipText"
+fi
+printf '%s\n' "$refresh_action" | grep -F 'id: refreshTooltip' >/dev/null || fail "manual refresh tooltip"
+printf '%s\n' "$refresh_action" | grep -F 'visible: refreshButton.children[1].containsMouse' >/dev/null || fail "manual refresh tooltip hover binding"
+printf '%s\n' "$refresh_action" | grep -F 'text: "Refresh Codex usage"' >/dev/null || fail "manual refresh tooltip copy"
 printf '%s\n' "$refresh_action" | grep -Fx '                    onClicked: CodexUsageData.refresh(true)' >/dev/null || fail "manual refresh handler"
 grep -F 'id: refreshStatus' "$WIDGET" >/dev/null || fail "refresh status footer"
 grep -F 'visible: CodexUsageData.refreshing' "$WIDGET" >/dev/null || fail "refresh status visibility"

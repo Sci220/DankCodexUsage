@@ -159,15 +159,37 @@ PluginComponent {
             closePopout: function() { root.closePopout() }
             headerActions: Component {
                 DankActionButton {
+                    id: refreshButton
                     buttonSize: 28
                     iconName: "refresh"
                     iconSize: Theme.iconSize - 4
                     iconColor: Theme.surfaceText
                     Accessible.name: "Refresh Codex usage"
-                    tooltipText: "Refresh Codex usage"
                     enabled: !CodexUsageData.refreshing
                     opacity: enabled ? 1.0 : 0.5
                     onClicked: CodexUsageData.refresh(true)
+
+                    Rectangle {
+                        id: refreshTooltip
+                        width: refreshTooltipLabel.contentWidth + Theme.spacingS * 2
+                        height: refreshTooltipLabel.contentHeight + Theme.spacingXS * 2
+                        radius: Theme.cornerRadiusSmall
+                        color: Theme.surfaceContainer
+                        border.color: Theme.outline
+                        border.width: 1
+                        anchors.right: parent.left
+                        anchors.rightMargin: Theme.spacingS
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: refreshButton.children[1].containsMouse
+
+                        StyledText {
+                            id: refreshTooltipLabel
+                            anchors.centerIn: parent
+                            text: "Refresh Codex usage"
+                            color: Theme.surfaceText
+                            font.pixelSize: Theme.fontSizeSmall
+                        }
+                    }
                 }
             }
 
