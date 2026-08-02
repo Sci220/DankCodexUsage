@@ -119,13 +119,20 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":3,"method":"account/rateLimits/read","params":{}}' >&7 || fail refresh_failed 'cannot write app-server request'
 exec 7>&-
 
+responses_complete() {
+  jq -s -e '
+    ([.[] | select(.id == 1 or .id == 2 or .id == 3) | .id] | unique | length == 3)
+  ' "$RESPONSES" >/dev/null 2>&1
+}
+
 elapsed=0
-while ! jq -s -e '
-  ([.[] | select(.id == 1 or .id == 2 or .id == 3) | .id] | unique | length == 3)
-' "$RESPONSES" >/dev/null 2>&1; do
+while ! responses_complete; do
   [ -f "$TIMEOUT_MARKER" ] && fail timeout 'Codex refresh timed out'
-  [ -f "$READER_DONE" ] && fail refresh_failed 'Codex app-server ended before a complete response'
-  [ "$elapsed" -ge "$TIMEOUT_SECONDS" ] && fail refresh_failed 'Codex app-server did not complete'
+  if [ -f "$READER_DONE" ]; then
+    responses_complete && break
+    fail refresh_failed 'Codex app-server ended before a complete response'
+  fi
+  [ "$elapsed" -ge "$TIMEOUT_SECONDS" ] && fail timeout 'Codex refresh timed out'
   sleep 1
   elapsed=$((elapsed + 1))
 done

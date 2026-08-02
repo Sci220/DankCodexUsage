@@ -23,6 +23,14 @@ case "${FAKE_CODEX_MODE:-success}" in
     fi
     wait "$child_pid"
     ;;
+  completion-race)
+    printf '%s\n' \
+      '{"jsonrpc":"2.0","id":1,"result":{}}' \
+      '{"jsonrpc":"2.0","id":2,"result":{"account":{"type":"chatgpt"}}}'
+    while [ ! -e "${FAKE_CODEX_RACE_SIGNAL_FILE:?}" ]; do sleep 1; done
+    printf '%s\n' \
+      '{"jsonrpc":"2.0","id":3,"result":{"rateLimits":{"limitId":"codex","primary":{"usedPercent":25,"windowDurationMins":300,"resetsAt":1785690000},"secondary":null}}}'
+    ;;
   *)
     fixture="${FAKE_CODEX_FIXTURE_DIR:?}/${FAKE_CODEX_MODE:-success}.jsonl"
     [ -f "$fixture" ] || exit 65

@@ -10,6 +10,10 @@ mkdir "$TMPDIR_TEST/bin" "$TMPDIR_TEST/cache"
 ln -s "$ROOT/tests/fake-codex.sh" "$TMPDIR_TEST/bin/codex"
 REQUEST_LOG=$TMPDIR_TEST/requests.jsonl
 INVOCATION_LOG=$TMPDIR_TEST/invocations.log
+REAL_JQ=$(command -v jq)
+REAL_SETSID=$(command -v setsid)
+ln -s "$ROOT/tests/fake-jq.sh" "$TMPDIR_TEST/bin/jq"
+ln -s "$ROOT/tests/fake-setsid.sh" "$TMPDIR_TEST/bin/setsid"
 
 run_mode() {
   mode=$1
@@ -89,6 +93,52 @@ run_protocol_failure_mode() {
   assert_error refresh_failed
 }
 
+run_live_hang_without_watchdog_marker() {
+  seed_cache
+  set +e
+  PATH=$TMPDIR_TEST/bin:$PATH \
+  FAKE_JQ_REAL_BIN=$REAL_JQ \
+  FAKE_SETSID_REAL_BIN=$REAL_SETSID \
+  FAKE_SETSID_SKIP_WATCHDOG=1 \
+  FAKE_CODEX_MODE=hang \
+  FAKE_CODEX_FIXTURE_DIR=$ROOT/fixtures \
+  CODEX_USAGE_CACHE_DIR=$TMPDIR_TEST/cache \
+  CODEX_USAGE_CODEX_BIN=$TMPDIR_TEST/bin/codex \
+  CODEX_USAGE_NOW=1785686800 \
+  CODEX_USAGE_FORCE=1 \
+  CODEX_USAGE_TIMEOUT_SECONDS=1 \
+  timeout 4 sh "$ROOT/fetch-usage.sh" >/dev/null 2>&1
+  exit_status=$?
+  set -e
+  [ "$exit_status" -ne 124 ] || fail "live hang without watchdog marker stalled"
+  [ "$exit_status" -ne 0 ] || fail "live hang without watchdog marker unexpectedly succeeded"
+  assert_cache_preserved
+  assert_error timeout
+}
+
+run_completion_race() {
+  seed_cache
+  race_signal=$TMPDIR_TEST/complete-race.signal
+  set +e
+  PATH=$TMPDIR_TEST/bin:$PATH \
+  FAKE_JQ_REAL_BIN=$REAL_JQ \
+  FAKE_SETSID_REAL_BIN=$REAL_SETSID \
+  FAKE_JQ_SIGNAL_FILE=$race_signal \
+  FAKE_JQ_POST_SIGNAL_DELAY_SECONDS=2 \
+  FAKE_CODEX_MODE=completion-race \
+  FAKE_CODEX_FIXTURE_DIR=$ROOT/fixtures \
+  FAKE_CODEX_RACE_SIGNAL_FILE=$race_signal \
+  CODEX_USAGE_CACHE_DIR=$TMPDIR_TEST/cache \
+  CODEX_USAGE_CODEX_BIN=$TMPDIR_TEST/bin/codex \
+  CODEX_USAGE_NOW=1785686800 \
+  CODEX_USAGE_FORCE=1 \
+  timeout 6 sh "$ROOT/fetch-usage.sh" >/dev/null 2>&1
+  exit_status=$?
+  set -e
+  [ "$exit_status" -eq 0 ] || fail "completed response race did not succeed"
+  assert_jq '.captured_at == 1785686800 and .primary.used_percentage == 25'
+}
+
 run_mode success 1785686400
 assert_jq '.version == 1 and .captured_at == 1785686400'
 assert_jq '.primary == {"used_percentage":25,"window_minutes":300,"resets_at":1785690000}'
@@ -126,6 +176,8 @@ run_failure_mode rate-limits-rpc-error refresh_failed
 run_protocol_failure_mode exit-before-read
 run_protocol_failure_mode incomplete
 run_protocol_failure_mode malformed-syntax
+run_live_hang_without_watchdog_marker
+run_completion_race
 
 run_mode no-secondary 1785686600
 
