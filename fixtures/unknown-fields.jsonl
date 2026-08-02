@@ -1,0 +1,3 @@
+{"jsonrpc":"2.0","id":1,"result":{"serverCapabilities":{"futureFeature":true}}}
+{"jsonrpc":"2.0","id":2,"result":{"account":{"type":"chatgpt","futureField":{"opaque":true}},"extra":42}}
+{"jsonrpc":"2.0","id":3,"result":{"rateLimits":{"limitId":"codex","primary":{"usedPercent":25,"windowDurationMins":300,"resetsAt":1785690000,"futureWindowField":"ignored"},"secondary":{"usedPercent":8,"windowDurationMins":10080,"resetsAt":1786291200},"futureBucketField":[1,2,3]},"futureResponseField":true}}

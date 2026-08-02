@@ -13,48 +13,63 @@ CODEX_BIN=${CODEX_USAGE_CODEX_BIN:-codex}
 NOW=${CODEX_USAGE_NOW:-$(date +%s)}
 
 WORK_DIR=
-SERVER_PID=
-SERVER_PGID=
+APP_PID=
 READER_PID=
 WATCHDOG_PID=
 CACHE_TEMP=
 
 cleanup() {
-  if [ -n "$WATCHDOG_PID" ]; then
+  trap - EXIT HUP INT TERM
+  if [ -n "${WATCHDOG_PID:-}" ]; then
     kill -TERM "-$WATCHDOG_PID" 2>/dev/null || true
     wait "$WATCHDOG_PID" 2>/dev/null || true
   fi
-  if [ -n "$SERVER_PGID" ]; then
-    kill -TERM "-$SERVER_PGID" 2>/dev/null || true
+  if [ -n "${APP_PID:-}" ]; then
+    kill -TERM "-$APP_PID" 2>/dev/null || true
+    wait "$APP_PID" 2>/dev/null || true
   fi
-  if [ -n "$SERVER_PID" ]; then
-    wait "$SERVER_PID" 2>/dev/null || true
+  [ -n "${READER_PID:-}" ] && wait "$READER_PID" 2>/dev/null || true
+  [ -n "${CACHE_TEMP:-}" ] && rm -f "$CACHE_TEMP"
+  [ -n "${WORK_DIR:-}" ] && rm -rf "$WORK_DIR"
+}
+
+trap cleanup EXIT HUP INT TERM
+
+write_error() {
+  category=$1
+  detail=$2
+  error_temp=$(mktemp "$CACHE_DIR/error.json.XXXXXX" 2>/dev/null || printf '%s/error.json.tmp.%s' "$CACHE_DIR" "$$") || return 1
+  if command -v jq >/dev/null 2>&1; then
+    jq -n --arg category "$category" --argjson occurred_at "$NOW" --arg detail "$detail" \
+      '{version: 1, category: $category, occurred_at: $occurred_at, detail: $detail}' >"$error_temp" || return 1
+  else
+    printf '{"version":1,"category":"dependency_missing","occurred_at":%s,"detail":"required helper dependency is unavailable"}\n' "$NOW" >"$error_temp" || return 1
   fi
-  [ -n "$CACHE_TEMP" ] && rm -f "$CACHE_TEMP"
-  if [ -n "$READER_PID" ]; then
-    kill "$READER_PID" 2>/dev/null || true
-    wait "$READER_PID" 2>/dev/null || true
-  fi
-  [ -n "$WORK_DIR" ] && rm -rf "$WORK_DIR"
+  chmod 600 "$error_temp" || return 1
+  mv "$error_temp" "$ERROR_FILE" || return 1
 }
 
 fail() {
-  printf '%s\n' "$1" >&2
+  category=$1
+  detail=$2
+  write_error "$category" "$detail" || true
+  printf '%s\n' "$detail" >&2
   exit 1
 }
 
-for dependency in jq flock; do
-  command -v "$dependency" >/dev/null 2>&1 || fail "missing dependency: $dependency"
-done
+mkdir -p "$CACHE_DIR" || { printf '%s\n' "cannot create cache directory" >&2; exit 1; }
+chmod 700 "$CACHE_DIR" || { printf '%s\n' "cannot secure cache directory" >&2; exit 1; }
 
 case $NOW in
-  ''|*[!0-9]*) fail 'CODEX_USAGE_NOW must be an epoch timestamp' ;;
+  ''|*[!0-9]*) fail refresh_failed 'invalid current time' ;;
 esac
 
-mkdir -p "$CACHE_DIR" || fail "cannot create cache directory: $CACHE_DIR"
-chmod 700 "$CACHE_DIR" || fail "cannot secure cache directory: $CACHE_DIR"
-exec 9>"$LOCK_FILE"
-flock 9
+for dependency in jq flock; do
+  command -v "$dependency" >/dev/null 2>&1 || fail dependency_missing 'required helper dependency is unavailable'
+done
+
+exec 9>"$LOCK_FILE" || fail dependency_missing 'cannot acquire helper lock'
+flock 9 || fail dependency_missing 'cannot acquire helper lock'
 
 if [ "${CODEX_USAGE_FORCE:-}" != 1 ] && [ -f "$CACHE_FILE" ]; then
   captured_at=$(jq -r '.captured_at // empty' "$CACHE_FILE" 2>/dev/null || true)
@@ -68,28 +83,27 @@ if [ "${CODEX_USAGE_FORCE:-}" != 1 ] && [ -f "$CACHE_FILE" ]; then
 fi
 
 for dependency in setsid mktemp; do
-  command -v "$dependency" >/dev/null 2>&1 || fail "missing dependency: $dependency"
+  command -v "$dependency" >/dev/null 2>&1 || fail dependency_missing 'required helper dependency is unavailable'
 done
-command -v "$CODEX_BIN" >/dev/null 2>&1 || fail "missing Codex executable: $CODEX_BIN"
+command -v "$CODEX_BIN" >/dev/null 2>&1 || fail codex_missing 'Codex executable is unavailable'
 
-WORK_DIR=$(mktemp -d) || fail 'cannot create work directory'
-trap cleanup EXIT HUP INT TERM
+WORK_DIR=$(mktemp -d) || fail refresh_failed 'cannot create refresh workspace'
 INPUT_FIFO=$WORK_DIR/input
 OUTPUT_FIFO=$WORK_DIR/output
 RESPONSES=$WORK_DIR/responses.jsonl
 BUCKET=$WORK_DIR/bucket.json
-mkfifo "$INPUT_FIFO" "$OUTPUT_FIFO" || fail 'cannot create app-server pipes'
+TIMEOUT_MARKER=$WORK_DIR/timed-out
+mkfifo "$INPUT_FIFO" "$OUTPUT_FIFO" || fail refresh_failed 'cannot create app-server pipes'
 
 # Keep a read/write endpoint open long enough for the server to attach to stdin.
 exec 7<>"$INPUT_FIFO"
 cat "$OUTPUT_FIFO" >"$RESPONSES" &
 READER_PID=$!
 setsid "$CODEX_BIN" app-server <&7 >"$OUTPUT_FIFO" &
-SERVER_PID=$!
-SERVER_PGID=$SERVER_PID
+APP_PID=$!
 
-setsid sh -c 'sleep "$1"; kill -TERM "-$2" 2>/dev/null || true' sh \
-  "$TIMEOUT_SECONDS" "$SERVER_PGID" &
+setsid sh -c 'sleep "$1"; : > "$2"; kill -TERM "-$3" 2>/dev/null || true' sh \
+  "$TIMEOUT_SECONDS" "$TIMEOUT_MARKER" "$APP_PID" &
 WATCHDOG_PID=$!
 
 if [ -n "${CODEX_USAGE_TEST_PRE_REQUEST_DELAY_SECONDS:-}" ]; then
@@ -99,14 +113,15 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"DankCodexUsage","version":"0.1.0"}}}' \
   '{"jsonrpc":"2.0","method":"initialized","params":{}}' \
   '{"jsonrpc":"2.0","id":2,"method":"account/read","params":{}}' \
-  '{"jsonrpc":"2.0","id":3,"method":"account/rateLimits/read","params":{}}' >&7
+  '{"jsonrpc":"2.0","id":3,"method":"account/rateLimits/read","params":{}}' >&7 || fail refresh_failed 'cannot write app-server request'
 exec 7>&-
 
 elapsed=0
 while ! jq -s -e '
   ([.[] | select(.id == 1 or .id == 2 or .id == 3) | .id] | unique | length == 3)
 ' "$RESPONSES" >/dev/null 2>&1; do
-  [ "$elapsed" -ge "$TIMEOUT_SECONDS" ] && fail 'timed out waiting for Codex app-server'
+  [ -f "$TIMEOUT_MARKER" ] && fail timeout 'Codex refresh timed out'
+  [ "$elapsed" -ge "$TIMEOUT_SECONDS" ] && fail refresh_failed 'Codex app-server did not complete'
   sleep 1
   elapsed=$((elapsed + 1))
 done
@@ -115,11 +130,31 @@ kill -TERM "-$WATCHDOG_PID" 2>/dev/null || true
 wait "$WATCHDOG_PID" 2>/dev/null || true
 WATCHDOG_PID=
 
+initialize_status=$(jq -s -r '
+  def response($id): map(select(.id == $id)) | last;
+  response(1) as $response |
+  if ($response | type) != "object" then "failed"
+  elif $response.error? != null then
+    if $response.error.code == -32601 or (($response.error.message? // "") | test("method not found"; "i"))
+    then "unsupported" else "failed" end
+  elif $response.result? == null then "failed"
+  else "ok" end
+' "$RESPONSES") || fail refresh_failed 'invalid initialize response'
+case $initialize_status in
+  ok) ;;
+  unsupported) fail codex_version_unsupported 'installed Codex does not support usage refresh' ;;
+  *) fail refresh_failed 'Codex initialize request failed' ;;
+esac
+
 auth_mode=$(jq -s -r '
   def response($id): map(select(.id == $id)) | last;
   response(2).result.account.type // empty
-' "$RESPONSES")
-[ -n "$auth_mode" ] || fail 'Codex account response has no auth mode'
+' "$RESPONSES") || fail refresh_failed 'invalid account response'
+case $auth_mode in
+  chatgpt) ;;
+  apiKey|api_key|api-key|apikey|api) fail api_key_unsupported 'API-key authentication does not provide usage limits' ;;
+  *) fail chatgpt_sign_in_required 'sign in to ChatGPT in Codex' ;;
+esac
 
 jq -s -e '
   def response($id): map(select(.id == $id)) | last;
@@ -128,9 +163,9 @@ jq -s -e '
     elif (.rateLimitsByLimitId.codex? != null) then .rateLimitsByLimitId.codex
     else null end;
   response(3).result | main_bucket
-' "$RESPONSES" >"$BUCKET" || fail 'Codex response has no codex rate-limit bucket'
+' "$RESPONSES" >"$BUCKET" || fail rate_limits_unavailable 'Codex has no usage limits for this account'
 
-CACHE_TEMP=$(mktemp "$CACHE_DIR/usage.json.XXXXXX") || fail 'cannot create cache file'
+CACHE_TEMP=$(mktemp "$CACHE_DIR/usage.json.XXXXXX") || fail refresh_failed 'cannot create cache file'
 jq -e --argjson now "$NOW" '
   def valid_window:
     type == "object" and
@@ -152,13 +187,13 @@ jq -e --argjson now "$NOW" '
     secondary: (.secondary | norm)
   }
   | select(.primary != null or .secondary != null)
-' "$BUCKET" >"$CACHE_TEMP" || fail 'Codex response has no valid rate-limit window'
+' "$BUCKET" >"$CACHE_TEMP" || fail refresh_failed 'Codex returned invalid usage limits'
 if [ "${CODEX_USAGE_TEST_MUTATE_CACHE:-}" = invalid-primary ]; then
   jq '.primary.used_percentage = "invalid"' "$CACHE_TEMP" >"$CACHE_TEMP.mutated" || \
-    fail 'cannot mutate cache for validation test'
-  mv "$CACHE_TEMP.mutated" "$CACHE_TEMP" || fail 'cannot mutate cache for validation test'
+    fail refresh_failed 'cannot validate generated cache'
+  mv "$CACHE_TEMP.mutated" "$CACHE_TEMP" || fail refresh_failed 'cannot validate generated cache'
 fi
-chmod 600 "$CACHE_TEMP" || fail 'cannot secure cache file'
+chmod 600 "$CACHE_TEMP" || fail refresh_failed 'cannot secure cache file'
 jq -e '
   def valid_window:
     type == "object" and
@@ -172,7 +207,7 @@ jq -e '
   (.primary | valid_or_null) and
   (.secondary | valid_or_null) and
   (.primary != null or .secondary != null)
-' "$CACHE_TEMP" >/dev/null || fail 'generated cache failed validation'
-mv "$CACHE_TEMP" "$CACHE_FILE" || fail 'cannot replace cache file'
+' "$CACHE_TEMP" >/dev/null || fail refresh_failed 'generated cache failed validation'
+mv "$CACHE_TEMP" "$CACHE_FILE" || fail refresh_failed 'cannot replace cache file'
 CACHE_TEMP=
 rm -f "$ERROR_FILE"

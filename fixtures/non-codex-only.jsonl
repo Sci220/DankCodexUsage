@@ -1,0 +1,3 @@
+{"jsonrpc":"2.0","id":1,"result":{}}
+{"jsonrpc":"2.0","id":2,"result":{"account":{"type":"chatgpt"}}}
+{"jsonrpc":"2.0","id":3,"result":{"rateLimitsByLimitId":{"other":{"limitId":"other","primary":{"usedPercent":99,"windowDurationMins":60,"resetsAt":1785600000},"secondary":null}}}}
