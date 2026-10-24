@@ -8,7 +8,7 @@
   "capabilities": ["dankbar-widget"],
   "component": "./CodexUsageWidget.qml",
   "icon": "speed",
-  "requires_dms": ">=0.1.0",
+  "requires_dms": ">=2.0.0",
   "requires": ["codex", "jq", "flock", "setsid"],
   "permissions": ["process"]
 }

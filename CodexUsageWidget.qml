@@ -2,6 +2,7 @@
 import QtQuick
 import QtQuick.Layouts
 import qs.Common
+import qs.DCommon.Widgets
 import qs.Widgets
 import qs.Modules.Plugins
 // The implicit directory import ignores qmldir singleton declarations; the
@@ -147,7 +148,7 @@ PluginComponent {
             showCloseButton: true
             closePopout: function() { root.closePopout() }
             headerActions: Component {
-                DankActionButton {
+                DActionButton {
                     id: refreshButton
                     buttonSize: 28
                     iconName: "refresh"
