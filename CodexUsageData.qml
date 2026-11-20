@@ -201,12 +201,17 @@ Singleton {
     FileView {
         id: errorFile
         path: root.errorPath
+        // error.json only exists while there is an error, so "not found" is the normal
+        // case: keep it out of the log and report any other read failure ourselves.
+        printErrors: false
         watchChanges: true
         onLoaded: root.loadError(errorFile.text())
         onLoadFailed: function(error) {
             if (error === FileViewError.FileNotFound) {
                 root.errorCategory = ""
                 root.errorDetail = ""
+            } else {
+                console.warn("DankCodexUsage: cannot read error.json (" + FileViewError.toString(error) + ")")
             }
         }
         onFileChanged: reload()
