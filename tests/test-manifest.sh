@@ -11,7 +11,7 @@ done
 jq -e '.id == "codexUsage" and .type == "widget"' "$M" >/dev/null || fail "identity"
 jq -e '.capabilities == ["dankbar-widget"]' "$M" >/dev/null || fail "capability"
 jq -e '.component == "./CodexUsageWidget.qml" and (has("settings") | not)' "$M" >/dev/null || fail "surface"
-jq -e '.version == "0.1.0" and .requires_dms == ">=0.1.0"' "$M" >/dev/null || fail "versions"
+jq -e '.version == "0.1.0" and .requires_dms == ">=2.0.0"' "$M" >/dev/null || fail "versions"
 jq -e '(.permissions | index("process")) != null' "$M" >/dev/null || fail "process permission"
 for dep in jq flock setsid codex; do
   jq -e --arg dep "$dep" '(.requires | index($dep)) != null' "$M" >/dev/null || fail "dependency: $dep"

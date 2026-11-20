@@ -88,7 +88,7 @@ grep -F 'verticalBarPill: Component {' "$WIDGET" >/dev/null || fail "vertical pi
 grep -F 'readonly property int warnPct: 70' "$WIDGET" >/dev/null || fail "warning threshold"
 grep -F 'readonly property int critPct: 90' "$WIDGET" >/dev/null || fail "critical threshold"
 refresh_action=$(awk '/headerActions: Component \{/{inside=1} inside{print} inside && /^                }$/{exit}' "$WIDGET")
-printf '%s\n' "$refresh_action" | grep -F 'DankActionButton {' >/dev/null || fail "manual refresh action"
+printf '%s\n' "$refresh_action" | grep -F 'DActionButton {' >/dev/null || fail "manual refresh action"
 printf '%s\n' "$refresh_action" | grep -F 'enabled: !CodexUsageData.refreshing' >/dev/null || fail "manual refresh disabled while busy"
 printf '%s\n' "$refresh_action" | grep -F 'opacity: enabled ? 1.0 : 0.5' >/dev/null || fail "manual refresh busy affordance"
 printf '%s\n' "$refresh_action" | grep -F 'Accessible.name: "Refresh Codex usage"' >/dev/null || fail "manual refresh accessible name"
